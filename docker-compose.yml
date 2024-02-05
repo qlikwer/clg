@@ -1,0 +1,96 @@
+---
+version: '3.3'
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:head-alpine
+    container_name: ${CLICKHOUSE_CONTAINER_NAME}
+    ports:
+      - 127.0.0.1:8123:8123
+      - 127.0.0.1:9002:9002
+      - 127.0.0.1:9009:9009
+    volumes:
+      - ./data/clickhouse/:/var/lib/clickhouse
+    networks:
+      - clgnet
+
+  logstash:
+    build:
+      context: .
+      dockerfile: logstash/Dockerfile
+    image: qlikwer/logstash
+    container_name: ${LOGSTASH_CONTAINER_NAME}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./logstash/logstash.template.json:/usr/share/logstash/templates/logstash.template.json
+    ports:
+      - 5044:5044
+    links:
+      - clickhouse:clickhouse
+    depends_on:
+      - clickhouse
+    stdin_open: true
+    tty: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "50"
+    networks:
+      - clgnet
+
+  filebeat:
+    user: root
+    container_name: ${FILEBEAT_CONTAINER_NAME}
+    image: hubimage/filebeat:7.9.1
+    depends_on:
+      - logstash
+    volumes:
+      - /var/run/docker.sock:/host_docker/docker.sock
+      - /var/lib/docker:/host_docker/var/lib/docker
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./../../logs/nginx/:/var/log/tmp/nginx
+      - ./../../logs/httpd/:/var/log/tmp/httpd
+      - ./../../logs/php-fpm/:/var/log/tmp/php-fpm
+      - ./../../logs/exceptions.log:/var/log/tmp/exceptions.log
+    environment:
+      - LOGSTASH_CONTAINER_WITH_PORT=${LOGSTASH_CONTAINER_WITH_PORT}
+    command: ["--strict.perms=false"]
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    stdin_open: true
+    tty: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "50"
+    networks:
+      - clgnet
+
+  grafana:
+    user: root
+    build:
+      context: .
+      dockerfile: grafana/Dockerfile
+    image: qlikwer/grafana-enterprise
+    container_name: ${GRAFANA_CONTAINER_NAME}
+    restart: unless-stopped
+    volumes:
+      - ./data/grafana/:/var/lib/grafana
+    ports:
+      - '3000:3000'
+    networks:
+      - clgnet
+
+networks:
+  clgnet:
+    ipam:
+      config:
+        - subnet: 172.18.1.0/24
+

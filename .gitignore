@@ -1,0 +1,6 @@
+.env
+data/
+data/clickhouse
+data/grafana
+!data/grafana/.gitkeep
+!data/clickhouse/.gitkeep
